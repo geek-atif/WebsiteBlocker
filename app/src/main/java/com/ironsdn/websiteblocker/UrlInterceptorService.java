@@ -97,9 +97,19 @@ public class UrlInterceptorService extends AccessibilityService {
     private void analyzeCapturedUrl(@NonNull String capturedUrl, @NonNull String browserPackage) {
         Log.d(TAG, "analyzeCapturedUrl() capturedUrl " + capturedUrl+" browserPackage "+ browserPackage);
         String redirectUrl = "https://www.ironsdn.com/";
-        if (capturedUrl.contains("m.facebook.com")) {
-            performRedirect(redirectUrl, browserPackage);
+
+
+        int hashCode = JavaUtility.getHash(capturedUrl);
+        Log.e(TAG, "currentURL : " + capturedUrl +" hashCode :"+ hashCode);
+        if(hashCode!=0){
+            URlLookup uRlLookup=   Utility.Companion.getURlLookup(hashCode);
+            Log.e(TAG, "uRlLookup " + uRlLookup.toString() +" url  :"+ uRlLookup.getURL());
+            if(uRlLookup.getAlert())
+                performRedirect(redirectUrl, browserPackage);
         }
+       /* if (capturedUrl.contains("m.facebook.com")) {
+            performRedirect(redirectUrl, browserPackage);
+        }*/
     }
 
     /** we just reopen the browser app with our redirect url using service context
