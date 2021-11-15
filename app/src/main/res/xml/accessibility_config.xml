@@ -1,6 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <accessibility-service
-    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:android="http://schemas.android.com/apk/res/android" xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:aapt="http://schemas.android.com/aapt"
     android:description="@string/accessibility_service_description"
+    android:accessibilityEventTypes="typeViewClicked|typeViewFocused|typeWindowStateChanged|typeWindowContentChanged"
+    android:accessibilityFeedbackType="feedbackHaptic"
     android:canRetrieveWindowContent="true"
-    android:settingsActivity=".ServiceSettingsActivity" />
+    android:canRequestEnhancedWebAccessibility="true"
+    android:canRequestFilterKeyEvents="true"
+    android:settingsActivity=".ServiceSettingsActivity"
+    />

@@ -2,6 +2,7 @@ package com.ironsdn.websiteblocker;
 
 import android.accessibilityservice.AccessibilityService;
 import android.accessibilityservice.AccessibilityServiceInfo;
+import android.annotation.SuppressLint;
 import android.content.ActivityNotFoundException;
 import android.content.Intent;
 import android.net.Uri;
@@ -11,41 +12,17 @@ import android.util.Log;
 import android.view.KeyEvent;
 import android.view.accessibility.AccessibilityEvent;
 import android.view.accessibility.AccessibilityNodeInfo;
-
-import android.accessibilityservice.AccessibilityService;
-import android.accessibilityservice.AccessibilityServiceInfo;
 import androidx.annotation.NonNull;
-
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 
-public class UrlInterceptorService extends AccessibilityService {
+@SuppressLint("LongLogTag")
+public class AppExtensionAccessibilityService extends AccessibilityService {
+    private static final boolean DEBUG = false;
+    static final String TAG = "com.ironsdn.websiteblocker.AppExtensionAccessibilityService";
+    public static AppExtensionAccessibilityService sAccessibilityService;
     private HashMap<String, Long> previousUrlDetections = new HashMap<>();
-    String TAG ="com.ironsdn.websiteblocker.UrlInterceptorService";
-
-    @Override
-    protected void onServiceConnected() {
-        Log.d(TAG, "onServiceConnected()");
-        AccessibilityServiceInfo info = getServiceInfo();
-       // info.eventTypes = AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED;
-        info.packageNames = packageNames();
-        info.feedbackType = AccessibilityServiceInfo.FEEDBACK_VISUAL;
-        //throttling of accessibility event notification
-       // info.notificationTimeout = 300;
-
-        info.flags = 121;
-        info.eventTypes = 10281;
-        info.notificationTimeout = 100;
-        //support ids interception
-        //info.flags = AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS | AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS;
-
-        this.setServiceInfo(info);
-
-
-
-    }
-
     public boolean onKeyEvent(KeyEvent keyEvent) {
         int keyCode = keyEvent.getKeyCode();
         if (keyCode == 3) {
@@ -60,6 +37,20 @@ public class UrlInterceptorService extends AccessibilityService {
         return super.onKeyEvent(keyEvent);
     }
 
+    public void onServiceConnected() {
+        if (Build.VERSION.SDK_INT >= 18) {
+            Log.d(TAG, " [onServiceConnected]");
+            sAccessibilityService = this;
+
+            AccessibilityServiceInfo serviceInfo = getServiceInfo();
+            serviceInfo.flags = 121;
+            serviceInfo.eventTypes = 10281;
+            serviceInfo.notificationTimeout = 100;
+            setServiceInfo(serviceInfo);
+
+
+        }
+    }
 
     public boolean onUnbind(Intent intent) {
         Log.d(TAG, "[NAL] [Disabled][onUnbind]");
@@ -87,46 +78,54 @@ public class UrlInterceptorService extends AccessibilityService {
     }
 
 
-    public void onAccessibilityEvent(@NonNull AccessibilityEvent event) {
-        String packageName = event.getPackageName().toString();
-        Log.d(TAG, "packageName  " + packageName);
-        AccessibilityNodeInfo parentNodeInfo = event.getSource();
-        if (parentNodeInfo == null) {
-            return;
-        }
-
-        SupportedBrowserConfig browserConfig = null;
-        Log.d(TAG, "packageName  " + packageName);
-        for (SupportedBrowserConfig supportedConfig: getSupportedBrowsers()) {
-            if (supportedConfig.packageName.equals(packageName)) {
-                browserConfig = supportedConfig;
+    public void onAccessibilityEvent(AccessibilityEvent event) {
+        try {
+            String packageName ="";
+            if(event.getPackageName()!=null){
+                packageName = event.getPackageName().toString();
             }
-        }
-        //this is not supported browser, so exit
-        if (browserConfig == null) {
-            Log.d(TAG, "browserConfig is null ");
-            return;
+
+            AccessibilityNodeInfo parentNodeInfo = event.getSource();
+            if (parentNodeInfo == null) {
+                return;
+            }
+
+            SupportedBrowserConfig browserConfig = null;
+            Log.d(TAG, "packageName  " + packageName);
+            for (SupportedBrowserConfig supportedConfig: getSupportedBrowsers()) {
+                if (supportedConfig.packageName.equals(packageName)) {
+                    browserConfig = supportedConfig;
+                }
+            }
+            //this is not supported browser, so exit
+            if (browserConfig == null) {
+                Log.d(TAG, "browserConfig is null ");
+                return;
+            }
+
+            String capturedUrl = captureUrl(parentNodeInfo, browserConfig);
+            Log.d(TAG, "capturedUrl " + capturedUrl);
+            parentNodeInfo.recycle();
+
+            //we can't find a url. Browser either was updated or opened page without url text field
+            if (capturedUrl == null) {
+                return;
+            }
+
+            long eventTime = event.getEventTime();
+            String detectionId = packageName + ", and url " + capturedUrl;
+            Log.d(TAG, "detectionId " + detectionId);
+            //noinspection ConstantConditions
+            long lastRecordedTime = previousUrlDetections.containsKey(detectionId) ? previousUrlDetections.get(detectionId) : 0;
+            //some kind of redirect throttling
+            if (eventTime - lastRecordedTime > 2000) {
+                previousUrlDetections.put(detectionId, eventTime);
+                analyzeCapturedUrl(capturedUrl, browserConfig.packageName);
+            }
+        }catch (Exception e){
+e.printStackTrace();
         }
 
-        String capturedUrl = captureUrl(parentNodeInfo, browserConfig);
-        Log.d(TAG, "capturedUrl " + capturedUrl);
-        parentNodeInfo.recycle();
-
-        //we can't find a url. Browser either was updated or opened page without url text field
-        if (capturedUrl == null) {
-            return;
-        }
-
-        long eventTime = event.getEventTime();
-        String detectionId = packageName + ", and url " + capturedUrl;
-        Log.d(TAG, "detectionId " + detectionId);
-        //noinspection ConstantConditions
-        long lastRecordedTime = previousUrlDetections.containsKey(detectionId) ? previousUrlDetections.get(detectionId) : 0;
-        //some kind of redirect throttling
-        if (eventTime - lastRecordedTime > 2000) {
-            previousUrlDetections.put(detectionId, eventTime);
-            analyzeCapturedUrl(capturedUrl, browserConfig.packageName);
-        }
     }
 
     private String captureUrl(AccessibilityNodeInfo info, SupportedBrowserConfig config) {
@@ -175,7 +174,7 @@ public class UrlInterceptorService extends AccessibilityService {
             intent.setPackage(browserPackage);
             intent.putExtra(Browser.EXTRA_APPLICATION_ID, browserPackage);
             intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_CLEAR_TASK | Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
-          //  intent.addFlags( Intent.FLAG_ACTIVITY_NEW_TASK );
+            //  intent.addFlags( Intent.FLAG_ACTIVITY_NEW_TASK );
             getApplicationContext().startActivity(intent);
         }
         catch(ActivityNotFoundException e) {
@@ -224,4 +223,10 @@ public class UrlInterceptorService extends AccessibilityService {
 
         return browsers;
     }
+
+
+
+
+
+
 }
